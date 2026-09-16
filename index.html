@@ -260,6 +260,7 @@
   var state = {
     loaded: false,
     categories: [],
+    branches: [],
     manuals: [],
     staff: [],
     confirmations: [],   // 현재 열어본 매뉴얼의 확인 기록만 필요할 때 불러옴
@@ -268,7 +269,7 @@
     query: '',
     detailManualId: null,
     isAdmin: false,
-    adminTab: 'manuals',  // manuals | categories | staff | status
+    adminTab: 'manuals',  // manuals | categories | branches | staff | status
     editingManual: null,  // 편집 중인 매뉴얼 draft 객체 (신규 작성 포함)
     statusManualId: null
   };
@@ -286,15 +287,18 @@
     Promise.all([
       sb.from('manual_categories').select('*').order('sort_order', {ascending:true}),
       sb.from('manuals').select('*').order('created_at', {ascending:false}),
-      sb.from('manual_staff').select('*').order('name', {ascending:true})
+      sb.from('manual_staff').select('*').order('name', {ascending:true}),
+      sb.from('manual_branches').select('*').order('sort_order', {ascending:true})
     ]).then(function(results){
-      var catRes = results[0], manRes = results[1], staffRes = results[2];
+      var catRes = results[0], manRes = results[1], staffRes = results[2], branchRes = results[3];
       if (catRes.error) throw catRes.error;
       if (manRes.error) throw manRes.error;
       if (staffRes.error) throw staffRes.error;
+      if (branchRes.error) throw branchRes.error;
       state.categories = catRes.data || [];
       state.manuals = manRes.data || [];
       state.staff = staffRes.data || [];
+      state.branches = branchRes.data || [];
       state.loaded = true;
       render();
     }).catch(function(err){
@@ -306,6 +310,16 @@
   function categoryName(id){
     var c = state.categories.filter(function(x){ return x.id === id; })[0];
     return c ? c.name : '미분류';
+  }
+
+  function branchName(id){
+    var b = state.branches.filter(function(x){ return x.id === id; })[0];
+    return b ? b.name : '미지정';
+  }
+
+  function staffBranchByName(name){
+    var s = state.staff.filter(function(x){ return x.name === name; })[0];
+    return s ? branchName(s.branch_id) : '미등록';
   }
 
   // ===== 검색 / 필터 =====
@@ -537,6 +551,7 @@
     var tabs = [
       ['manuals', '매뉴얼 관리'],
       ['categories', '카테고리 관리'],
+      ['branches', '매장 관리'],
       ['staff', '직원 명단'],
       ['status', '확인 현황']
     ];
@@ -565,6 +580,7 @@
     var body = document.getElementById('adminBody');
     if (state.adminTab === 'manuals') renderAdminManuals(body);
     else if (state.adminTab === 'categories') renderAdminCategories(body);
+    else if (state.adminTab === 'branches') renderAdminBranches(body);
     else if (state.adminTab === 'staff') renderAdminStaff(body);
     else if (state.adminTab === 'status') renderAdminStatus(body);
   }
@@ -834,37 +850,150 @@
     });
   }
 
-  // --- 직원 명단 ---
-  function renderAdminStaff(body){
-    var rows = state.staff.map(function(s){
+  // --- 매장 관리 ---
+  function renderAdminBranches(body){
+    var rows = state.branches.map(function(b){
       return (
         '<div class="list-row">' +
-          '<div class="info"><div class="t">' + esc(s.name) + '</div></div>' +
-          '<div class="row-actions"><button class="icon-btn danger" data-staff-del="' + esc(s.id) + '">삭제</button></div>' +
+          '<div class="info"><div class="t">' + esc(b.name) + '</div><div class="s">순서 ' + b.sort_order + '</div></div>' +
+          '<div class="row-actions">' +
+            '<button class="icon-btn" data-branch-rename="' + esc(b.id) + '">이름 변경</button>' +
+            '<button class="icon-btn danger" data-branch-del="' + esc(b.id) + '">삭제</button>' +
+          '</div>' +
         '</div>'
       );
+    }).join('') || '<div class="empty">등록된 매장이 없어요.</div>';
+
+    body.innerHTML =
+      '<div class="section-head"><h3>매장 (' + state.branches.length + ')</h3></div>' +
+      '<div class="hint" style="margin-bottom:12px;">여기서 매장을 등록해두면 "직원 명단"에서 직원마다 소속 매장을 지정할 수 있어요.</div>' +
+      '<div class="form-card">' +
+        '<div class="field"><label>새 매장 이름</label>' +
+          '<div style="display:flex; gap:8px;"><input type="text" id="newBranchName" placeholder="예: 성수점" style="flex:1;"><button class="btn" id="btnAddBranch">추가</button></div>' +
+        '</div>' +
+      '</div>' +
+      rows;
+
+    document.getElementById('btnAddBranch').addEventListener('click', function(){
+      var input = document.getElementById('newBranchName');
+      var name = input.value.trim();
+      if (!name){ toast('매장 이름을 입력해주세요.'); return; }
+      var sortOrder = state.branches.length ? Math.max.apply(null, state.branches.map(function(b){ return b.sort_order; })) + 1 : 0;
+      sb.from('manual_branches').insert({ name: name, sort_order: sortOrder }).select().then(function(res){
+        if (res.error){ toast('추가 실패: ' + res.error.message); return; }
+        state.branches.push(res.data[0]);
+        toast('매장을 추가했어요.');
+        render();
+      });
+    });
+
+    body.querySelectorAll('[data-branch-rename]').forEach(function(el){
+      el.addEventListener('click', function(){
+        var id = el.getAttribute('data-branch-rename');
+        var b = state.branches.filter(function(x){ return x.id === id; })[0];
+        var name = prompt('새 이름을 입력하세요.', b.name);
+        if (name == null) return;
+        name = name.trim();
+        if (!name) return;
+        sb.from('manual_branches').update({ name: name }).eq('id', id).then(function(res){
+          if (res.error){ toast('변경 실패: ' + res.error.message); return; }
+          b.name = name;
+          toast('이름을 변경했어요.');
+          render();
+        });
+      });
+    });
+    body.querySelectorAll('[data-branch-del]').forEach(function(el){
+      el.addEventListener('click', function(){
+        var id = el.getAttribute('data-branch-del');
+        var used = state.staff.some(function(s){ return s.branch_id === id; });
+        if (used && !confirm('이 매장 소속 직원이 있어요. 삭제하면 해당 직원은 "미지정"이 됩니다. 계속할까요?')) return;
+        sb.from('manual_branches').delete().eq('id', id).then(function(res){
+          if (res.error){ toast('삭제 실패: ' + res.error.message); return; }
+          state.branches = state.branches.filter(function(b){ return b.id !== id; });
+          state.staff.forEach(function(s){ if (s.branch_id === id) s.branch_id = null; });
+          toast('삭제했어요.');
+          render();
+        });
+      });
+    });
+  }
+
+  // --- 직원 명단 ---
+  function renderAdminStaff(body){
+    var branchOptions = '<option value="">매장 선택 안 함</option>' + state.branches.map(function(b){
+      return '<option value="' + esc(b.id) + '">' + esc(b.name) + '</option>';
+    }).join('');
+
+    var grouped = {};
+    var groupOrder = [];
+    state.branches.forEach(function(b){ grouped[b.id] = []; groupOrder.push(b.id); });
+    grouped['__none__'] = [];
+    groupOrder.push('__none__');
+    state.staff.forEach(function(s){
+      var key = (s.branch_id && grouped[s.branch_id]) ? s.branch_id : '__none__';
+      grouped[key].push(s);
+    });
+
+    var rows = groupOrder.map(function(key){
+      var list = grouped[key];
+      if (!list.length) return '';
+      var heading = key === '__none__' ? '미지정' : branchName(key);
+      var itemsHtml = list.map(function(s){
+        var staffBranchOptions = '<option value="">매장 선택 안 함</option>' + state.branches.map(function(b){
+          return '<option value="' + esc(b.id) + '"' + (s.branch_id === b.id ? ' selected' : '') + '>' + esc(b.name) + '</option>';
+        }).join('');
+        return (
+          '<div class="list-row">' +
+            '<div class="info"><div class="t">' + esc(s.name) + '</div></div>' +
+            '<div class="row-actions">' +
+              '<select class="icon-btn" data-staff-branch="' + esc(s.id) + '">' + staffBranchOptions + '</select>' +
+              '<button class="icon-btn danger" data-staff-del="' + esc(s.id) + '">삭제</button>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join('');
+      return '<div class="section-head" style="margin-top:18px;"><h3 style="font-size:13px; color:var(--ink-faint);">' + esc(heading) + ' (' + list.length + ')</h3></div>' + itemsHtml;
     }).join('') || '<div class="empty">등록된 직원이 없어요.</div>';
 
     body.innerHTML =
       '<div class="section-head"><h3>직원 명단 (' + state.staff.length + ')</h3></div>' +
-      '<div class="hint" style="margin-bottom:12px;">여기에 등록해두면 "확인 현황"에서 아직 안 본 직원을 자동으로 보여줘요.</div>' +
+      '<div class="hint" style="margin-bottom:12px;">여기에 등록해두면 "확인 현황"에서 아직 안 본 직원을 매장별로 보여줘요.</div>' +
       '<div class="form-card">' +
         '<div class="field"><label>새 직원 이름</label>' +
-          '<div style="display:flex; gap:8px;"><input type="text" id="newStaffName" placeholder="이름" style="flex:1;"><button class="btn" id="btnAddStaff">추가</button></div>' +
+          '<input type="text" id="newStaffName" placeholder="이름" style="margin-bottom:10px;">' +
+        '</div>' +
+        '<div class="field"><label>소속 매장</label>' +
+          '<div style="display:flex; gap:8px;"><select id="newStaffBranch" style="flex:1;">' + branchOptions + '</select><button class="btn" id="btnAddStaff">추가</button></div>' +
         '</div>' +
       '</div>' +
       rows;
 
     document.getElementById('btnAddStaff').addEventListener('click', function(){
       var input = document.getElementById('newStaffName');
+      var branchSel = document.getElementById('newStaffBranch');
       var name = input.value.trim();
       if (!name){ toast('이름을 입력해주세요.'); return; }
-      sb.from('manual_staff').insert({ name: name }).select().then(function(res){
+      sb.from('manual_staff').insert({ name: name, branch_id: branchSel.value || null }).select().then(function(res){
         if (res.error){ toast('추가 실패: ' + res.error.message); return; }
         state.staff.push(res.data[0]);
         state.staff.sort(function(a,b){ return a.name.localeCompare(b.name); });
         toast('추가했어요.');
         render();
+      });
+    });
+
+    body.querySelectorAll('[data-staff-branch]').forEach(function(el){
+      el.addEventListener('change', function(){
+        var id = el.getAttribute('data-staff-branch');
+        var branchId = el.value || null;
+        sb.from('manual_staff').update({ branch_id: branchId }).eq('id', id).then(function(res){
+          if (res.error){ toast('변경 실패: ' + res.error.message); return; }
+          var s = state.staff.filter(function(x){ return x.id === id; })[0];
+          if (s) s.branch_id = branchId;
+          toast('매장을 변경했어요.');
+          render();
+        });
       });
     });
 
@@ -914,14 +1043,24 @@
         var confirmedNames = Object.keys(latestByName);
         var notConfirmed = state.staff.filter(function(s){ return confirmedNames.indexOf(s.name) === -1; });
 
-        var rowsHtml = confirmedNames.map(function(name){
-          return '<tr><td>' + esc(name) + '</td><td><span class="badge ok">확인함</span></td><td>' + esc(fmtDate(latestByName[name])) + '</td></tr>';
-        }).join('') + notConfirmed.map(function(s){
-          return '<tr><td>' + esc(s.name) + '</td><td><span class="badge no">안 봄</span></td><td>-</td></tr>';
+        var combined = confirmedNames.map(function(name){
+          return { name: name, branch: staffBranchByName(name), ok: true, date: latestByName[name] };
+        }).concat(notConfirmed.map(function(s){
+          return { name: s.name, branch: branchName(s.branch_id), ok: false, date: null };
+        }));
+        combined.sort(function(a,b){
+          if (a.branch !== b.branch) return a.branch.localeCompare(b.branch);
+          return a.name.localeCompare(b.name);
+        });
+
+        var rowsHtml = combined.map(function(row){
+          return '<tr><td>' + esc(row.branch) + '</td><td>' + esc(row.name) + '</td><td>' +
+            (row.ok ? '<span class="badge ok">확인함</span>' : '<span class="badge no">안 봄</span>') +
+            '</td><td>' + (row.date ? esc(fmtDate(row.date)) : '-') + '</td></tr>';
         }).join('');
 
-        result.innerHTML = confirmedNames.length || notConfirmed.length ? (
-          '<table class="confirm-status-table"><thead><tr><th>이름</th><th>상태</th><th>확인 일시</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>'
+        result.innerHTML = combined.length ? (
+          '<table class="confirm-status-table"><thead><tr><th>매장</th><th>이름</th><th>상태</th><th>확인 일시</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>'
         ) : '<div class="empty">직원 명단을 먼저 등록해주세요.</div>';
       });
     }
