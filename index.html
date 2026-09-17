@@ -309,6 +309,7 @@
     adminTab: 'manuals',  // manuals | categories | branches | staff | progress | status
     editingManual: null,  // 편집 중인 매뉴얼 draft 객체 (신규 작성 포함)
     statusManualId: null,
+    statusBranchId: null,  // 확인 현황 탭에서 고른 매장 (null = 전체)
     progressBranchId: null // 진행률 탭에서 고른 매장 (null = 전체)
   };
 
@@ -1248,15 +1249,27 @@
       return '<option value="' + esc(m.id) + '"' + (state.statusManualId === m.id ? ' selected' : '') + '>' + esc(m.title) + '</option>';
     }).join('');
 
+    var chips = ['<button class="chip' + (!state.statusBranchId ? ' active' : '') + '" data-branch="">전체</button>'];
+    state.branches.forEach(function(b){
+      chips.push('<button class="chip' + (state.statusBranchId === b.id ? ' active' : '') + '" data-branch="' + esc(b.id) + '">' + esc(b.name) + '</button>');
+    });
+
     body.innerHTML =
       '<div class="section-head"><h3>매뉴얼별 확인 현황</h3></div>' +
       '<div class="field"><select id="statusSelect"><option value="">매뉴얼을 선택하세요</option>' + options + '</select></div>' +
+      '<div class="chips">' + chips.join('') + '</div>' +
       '<div id="statusResult"></div>';
 
     var sel = document.getElementById('statusSelect');
     sel.addEventListener('change', function(){
       state.statusManualId = sel.value || null;
       loadStatus();
+    });
+    body.querySelectorAll('[data-branch]').forEach(function(el){
+      el.addEventListener('click', function(){
+        state.statusBranchId = el.getAttribute('data-branch') || null;
+        render();
+      });
     });
     if (state.statusManualId) loadStatus();
 
@@ -1276,14 +1289,17 @@
         var staffNames = {};
         state.staff.forEach(function(s){ staffNames[s.name] = true; });
 
-        var combined = state.staff.map(function(s){
+        var staffList = state.staff.filter(function(s){ return !state.statusBranchId || s.branch_id === state.statusBranchId; });
+        var combined = staffList.map(function(s){
           var date = byStaffId[s.id] || byName[s.name] || null;
           return { name: s.name, branch: branchName(s.branch_id), ok: !!date, date: date };
         });
-        // 명단에 없는 이름으로 남은 옛 기록도 보여 줌
-        Object.keys(byName).forEach(function(name){
-          if (!staffNames[name]) combined.push({ name: name, branch: '옛 기록', ok: true, date: byName[name] });
-        });
+        // 명단에 없는 이름으로 남은 옛 기록도 보여 줌 (전체 보기일 때만)
+        if (!state.statusBranchId){
+          Object.keys(byName).forEach(function(name){
+            if (!staffNames[name]) combined.push({ name: name, branch: '옛 기록', ok: true, date: byName[name] });
+          });
+        }
         combined.sort(function(a,b){
           if (a.branch !== b.branch) return a.branch.localeCompare(b.branch);
           return a.name.localeCompare(b.name);
@@ -1297,7 +1313,7 @@
 
         result.innerHTML = combined.length ? (
           '<table class="confirm-status-table"><thead><tr><th>매장</th><th>이름</th><th>상태</th><th>확인 일시</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>'
-        ) : '<div class="empty">직원 명단을 먼저 등록해주세요.</div>';
+        ) : '<div class="empty">' + (state.statusBranchId ? '이 매장에 등록된 직원이 없어요.' : '직원 명단을 먼저 등록해주세요.') + '</div>';
       });
     }
   }
