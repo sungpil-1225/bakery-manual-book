@@ -194,6 +194,33 @@
   .badge{ font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; }
   .badge.ok{ background:var(--ok-soft); color:var(--ok); }
   .badge.no{ background:var(--danger-soft); color:var(--danger); }
+  .badge.req{ background:var(--accent-soft); color:var(--accent); }
+  .badge.late{ background:var(--danger-soft); color:var(--danger); }
+  .manual-card .title .badge, .list-row .t .badge, .detail-card h2 .badge{ vertical-align:middle; margin-left:6px; }
+
+  /* 확인 UI (매장 → 이름 고르기) */
+  .confirm-row select{ flex:1; min-width:0; padding:11px 12px; border-radius:var(--radius-s); border:1px solid var(--line-strong); background:var(--surface); color:var(--ink); font-size:14px; outline:none; font-family:inherit; }
+  .confirm-row select:focus{ border-color:var(--accent); }
+  .confirm-note{ font-size:12px; color:var(--ink-faint); margin-top:8px; }
+  .confirmed-list{ margin-top:16px; }
+  .confirmed-list h4{ font-size:12.5px; color:var(--ink-faint); margin:0 0 8px; font-weight:600; }
+  .confirmed-group{ font-size:13px; margin-bottom:6px; }
+  .confirmed-group b{ color:var(--ink-soft); font-weight:600; margin-right:6px; }
+  .confirmed-group span{ display:inline-block; background:var(--ok-soft); color:var(--ok); padding:2px 9px; border-radius:999px; font-size:12px; margin:0 4px 4px 0; }
+
+  /* 신입 진행률 */
+  .progress-card{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-m); padding:14px 16px; margin-bottom:10px; box-shadow:var(--shadow); }
+  .progress-card .top{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
+  .progress-card .name{ font-size:15px; font-weight:600; }
+  .progress-card .meta{ font-size:12px; color:var(--ink-faint); margin-top:2px; }
+  .progress-card .count{ font-size:13px; font-weight:600; color:var(--ink-soft); white-space:nowrap; }
+  .progress-card .count.done{ color:var(--ok); }
+  .progress-bar{ height:8px; border-radius:999px; background:var(--surface-sunken); overflow:hidden; margin-bottom:8px; }
+  .progress-bar i{ display:block; height:100%; background:var(--accent); border-radius:999px; }
+  .progress-bar i.done{ background:var(--ok); }
+  .progress-card .remain{ font-size:12.5px; color:var(--ink-soft); }
+  .progress-card .remain span{ display:inline-block; background:var(--surface-sunken); padding:2px 8px; border-radius:999px; margin:0 4px 4px 0; }
+  .progress-summary{ font-size:13px; color:var(--ink-soft); margin-bottom:12px; }
 
   @media (max-width:480px){
     .head h1{ font-size:17px; }
@@ -246,6 +273,15 @@
     return d.getFullYear() + '.' + pad(d.getMonth()+1) + '.' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
 
+  // 등록일로부터 며칠째인지, 달력 날짜 기준 (등록 당일 = 1일째, 다음 날 = 2일째)
+  function daysSince(iso){
+    if (!iso) return 0;
+    var d = new Date(iso), now = new Date();
+    var start = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    return Math.max(1, Math.round((today - start) / 86400000) + 1);
+  }
+
   function extractYoutubeId(url){
     if (!url) return '';
     var m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([A-Za-z0-9_-]{6,})/);
@@ -266,13 +302,25 @@
     confirmations: [],   // 현재 열어본 매뉴얼의 확인 기록만 필요할 때 불러옴
     view: 'home',         // home | detail | admin-login | admin
     activeCategory: null,
+    onlyRequired: false,  // 홈에서 "신입 필수"만 보기
     query: '',
     detailManualId: null,
     isAdmin: false,
-    adminTab: 'manuals',  // manuals | categories | branches | staff | status
+    adminTab: 'manuals',  // manuals | categories | branches | staff | progress | status
     editingManual: null,  // 편집 중인 매뉴얼 draft 객체 (신규 작성 포함)
-    statusManualId: null
+    statusManualId: null,
+    progressBranchId: null // 진행률 탭에서 고른 매장 (null = 전체)
   };
+
+  // 매장 공용폰이라 마지막에 고른 매장을 기억해 두면 다음 사람은 이름만 고르면 됨
+  // (localStorage가 막힌 환경에서도 이 세션 안에서는 메모리로 기억)
+  var confirmBranchId = '';
+  try { confirmBranchId = localStorage.getItem('mb_branch') || ''; } catch(e){}
+  function getSavedBranch(){ return confirmBranchId; }
+  function saveBranch(id){
+    confirmBranchId = id || '';
+    try { localStorage.setItem('mb_branch', confirmBranchId); } catch(e){}
+  }
 
   try {
     if (sessionStorage.getItem('mb_admin') === '1') state.isAdmin = true;
@@ -317,29 +365,65 @@
     return b ? b.name : '미지정';
   }
 
-  function staffBranchByName(name){
-    var s = state.staff.filter(function(x){ return x.name === name; })[0];
-    return s ? branchName(s.branch_id) : '미등록';
+  // ===== 검색 / 필터 =====
+  // 띄어쓰기·대소문자를 무시하고 비교 ("컵 홀더" → "컵홀더")
+  function norm(s){
+    return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, '');
   }
 
-  // ===== 검색 / 필터 =====
   function matchesQuery(m, q){
+    q = norm(q);
     if (!q) return true;
-    q = q.toLowerCase();
-    var hay = [
+    var hay = norm([
       m.title || '',
       (m.tags || []).join(' '),
       (m.steps || []).join(' '),
       categoryName(m.category_id)
-    ].join(' ').toLowerCase();
+    ].join(' '));
     return hay.indexOf(q) !== -1;
   }
 
   function visibleManuals(){
     return state.manuals.filter(function(m){
       var okCat = !state.activeCategory || m.category_id === state.activeCategory;
-      var okQuery = matchesQuery(m, state.query.trim());
-      return okCat && okQuery;
+      var okReq = !state.onlyRequired || !!m.is_required;
+      var okQuery = matchesQuery(m, state.query);
+      return okCat && okReq && okQuery;
+    });
+  }
+
+  function requiredManuals(){
+    return state.manuals.filter(function(m){ return !!m.is_required; });
+  }
+
+  function requiredBadge(m){
+    return m.is_required ? '<span class="badge req">신입 필수</span>' : '';
+  }
+
+  function manualCardHtml(m){
+    return (
+      '<div class="manual-card" data-id="' + esc(m.id) + '">' +
+        '<div class="cat">' + esc(categoryName(m.category_id)) + '</div>' +
+        '<div class="title">' + esc(m.title) + requiredBadge(m) + '</div>' +
+        '<div class="tags">' + (m.tags||[]).map(function(t){ return '<span class="tag">#' + esc(t) + '</span>'; }).join('') + '</div>' +
+      '</div>'
+    );
+  }
+
+  function manualListHtml(list){
+    if (list.length) return list.map(manualCardHtml).join('');
+    if (state.onlyRequired && !requiredManuals().length) return '<div class="empty">아직 "신입 필수"로 지정된 매뉴얼이 없어요.<br>관리자 화면에서 매뉴얼을 수정해 지정할 수 있어요.</div>';
+    return '<div class="empty">검색 결과가 없어요.<br>다른 키워드로 찾아보세요.</div>';
+  }
+
+  function bindCardEvents(){
+    document.querySelectorAll('.manual-card').forEach(function(el){
+      el.addEventListener('click', function(){
+        state.detailManualId = el.getAttribute('data-id');
+        state.view = 'detail';
+        render();
+        window.scrollTo(0,0);
+      });
     });
   }
 
@@ -366,27 +450,20 @@
   }
 
   function renderHome(){
-    var list = visibleManuals();
-    var chips = ['<button class="chip' + (!state.activeCategory ? ' active' : '') + '" data-cat="">전체</button>'];
+    var reqCount = requiredManuals().length;
+    var chips = [
+      '<button class="chip' + (!state.activeCategory && !state.onlyRequired ? ' active' : '') + '" data-cat="">전체</button>',
+      '<button class="chip' + (state.onlyRequired ? ' active' : '') + '" data-req="1">신입 필수' + (reqCount ? ' ' + reqCount : '') + '</button>'
+    ];
     state.categories.forEach(function(c){
       chips.push('<button class="chip' + (state.activeCategory === c.id ? ' active' : '') + '" data-cat="' + esc(c.id) + '">' + esc(c.name) + '</button>');
     });
-
-    var cardsHtml = list.length ? list.map(function(m){
-      return (
-        '<div class="manual-card" data-id="' + esc(m.id) + '">' +
-          '<div class="cat">' + esc(categoryName(m.category_id)) + '</div>' +
-          '<div class="title">' + esc(m.title) + '</div>' +
-          '<div class="tags">' + (m.tags||[]).map(function(t){ return '<span class="tag">#' + esc(t) + '</span>'; }).join('') + '</div>' +
-        '</div>'
-      );
-    }).join('') : '<div class="empty">검색 결과가 없어요.<br>다른 키워드로 찾아보세요.</div>';
 
     app.innerHTML =
       renderHeader() +
       '<div class="search-box"><span class="icon">&#128269;</span><input id="searchInput" type="text" placeholder="예: 컵홀더, 단팥빵, 근로계약서" value="' + esc(state.query) + '"></div>' +
       '<div class="chips">' + chips.join('') + '</div>' +
-      '<div class="manual-list">' + cardsHtml + '</div>';
+      '<div class="manual-list">' + manualListHtml(visibleManuals()) + '</div>';
 
     bindHeaderEvents();
 
@@ -397,43 +474,25 @@
 
     document.querySelectorAll('.chip').forEach(function(el){
       el.addEventListener('click', function(){
-        state.activeCategory = el.getAttribute('data-cat') || null;
+        if (el.hasAttribute('data-req')){
+          state.onlyRequired = !state.onlyRequired;
+          state.activeCategory = null;
+        } else {
+          state.activeCategory = el.getAttribute('data-cat') || null;
+          state.onlyRequired = false;
+        }
         render();
       });
     });
-    document.querySelectorAll('.manual-card').forEach(function(el){
-      el.addEventListener('click', function(){
-        state.detailManualId = el.getAttribute('data-id');
-        state.view = 'detail';
-        render();
-        window.scrollTo(0,0);
-      });
-    });
+    bindCardEvents();
   }
 
   // 검색 입력 중에는 목록만 다시 그려서 포커스를 잃지 않게 함
   function renderListOnly(){
-    var list = visibleManuals();
-    var cardsHtml = list.length ? list.map(function(m){
-      return (
-        '<div class="manual-card" data-id="' + esc(m.id) + '">' +
-          '<div class="cat">' + esc(categoryName(m.category_id)) + '</div>' +
-          '<div class="title">' + esc(m.title) + '</div>' +
-          '<div class="tags">' + (m.tags||[]).map(function(t){ return '<span class="tag">#' + esc(t) + '</span>'; }).join('') + '</div>' +
-        '</div>'
-      );
-    }).join('') : '<div class="empty">검색 결과가 없어요.<br>다른 키워드로 찾아보세요.</div>';
     var listEl = document.querySelector('.manual-list');
     if (listEl){
-      listEl.innerHTML = cardsHtml;
-      document.querySelectorAll('.manual-card').forEach(function(el){
-        el.addEventListener('click', function(){
-          state.detailManualId = el.getAttribute('data-id');
-          state.view = 'detail';
-          render();
-          window.scrollTo(0,0);
-        });
-      });
+      listEl.innerHTML = manualListHtml(visibleManuals());
+      bindCardEvents();
     }
   }
 
@@ -475,43 +534,127 @@
       '<div class="tags">' + (m.tags||[]).map(function(t){ return '<span class="tag">#' + esc(t) + '</span>'; }).join('') + '</div>'
     ) : '';
 
-    var staffOptions = state.staff.map(function(s){ return '<option value="' + esc(s.name) + '">'; }).join('');
-
     app.innerHTML =
       renderHeader(null, {back:true}) +
       '<div class="detail-card">' +
         '<div class="cat">' + esc(categoryName(m.category_id)) + '</div>' +
-        '<h2>' + esc(m.title) + '</h2>' +
+        '<h2>' + esc(m.title) + requiredBadge(m) + '</h2>' +
         photosHtml +
         videoHtml +
         stepsHtml +
         tagsHtml +
         '<div class="confirm-box">' +
-          '<p>다 확인하셨으면 이름을 입력하고 버튼을 눌러주세요.</p>' +
-          '<div id="confirmArea">' +
-            '<div class="confirm-row">' +
-              '<input id="confirmName" type="text" placeholder="이름 입력" list="staffNames">' +
-              '<datalist id="staffNames">' + staffOptions + '</datalist>' +
-              '<button class="btn" id="btnConfirm">확인했어요</button>' +
-            '</div>' +
-          '</div>' +
+          '<p>다 확인하셨으면 매장과 본인 이름을 고르고 버튼을 눌러주세요.</p>' +
+          '<div id="confirmArea"></div>' +
+          '<div class="confirmed-list" id="confirmedList"><h4>확인한 사람</h4><div class="loading" style="padding:10px 0;">불러오는 중…</div></div>' +
         '</div>' +
       '</div>';
 
     bindHeaderEvents();
 
-    document.getElementById('btnConfirm').addEventListener('click', function(){
-      var nameInput = document.getElementById('confirmName');
-      var name = (nameInput.value || '').trim();
-      if (!name){ toast('이름을 입력해주세요.'); return; }
-      var btn = document.getElementById('btnConfirm');
-      btn.disabled = true;
-      sb.from('manual_confirmations').insert({ manual_id: m.id, staff_name: name }).then(function(res){
-        if (res.error){ toast('저장 실패: ' + res.error.message); btn.disabled = false; return; }
-        document.getElementById('confirmArea').innerHTML = '<div class="confirm-done">확인 완료! ' + esc(name) + '님, ' + fmtDate(new Date().toISOString()) + '</div>';
-        toast('확인 기록이 저장되었어요.');
+    var confirmed = [];          // 이 매뉴얼의 확인 기록
+    var confirmedStaffIds = {};  // staff_id → confirmed_at
+
+    // 확인 기록 한 줄을 (이름, 매장)으로 풀어 줌. 옛 기록(staff_id 없음)은 이름 문자열로 표시
+    function describe(c){
+      var s = c.staff_id ? state.staff.filter(function(x){ return x.id === c.staff_id; })[0] : null;
+      return { name: s ? s.name : (c.staff_name || '(이름 없음)'), branch: s ? branchName(s.branch_id) : (c.staff_name ? '옛 기록' : '미지정') };
+    }
+
+    function renderConfirmedList(){
+      var el = document.getElementById('confirmedList');
+      if (!el) return;
+      if (!confirmed.length){ el.innerHTML = '<h4>확인한 사람</h4><div class="confirm-note">아직 아무도 확인하지 않았어요.</div>'; return; }
+      var groups = {};
+      var order = [];
+      confirmed.forEach(function(c){
+        var d = describe(c);
+        if (!groups[d.branch]){ groups[d.branch] = []; order.push(d.branch); }
+        groups[d.branch].push(d.name + ' · ' + fmtDate(c.confirmed_at).slice(5, 10));
       });
-    });
+      order.sort(function(a, b){ return a.localeCompare(b); });
+      el.innerHTML = '<h4>확인한 사람 (' + confirmed.length + ')</h4>' + order.map(function(b){
+        return '<div class="confirmed-group"><b>' + esc(b) + '</b>' + groups[b].map(function(t){ return '<span>' + esc(t) + '</span>'; }).join('') + '</div>';
+      }).join('');
+    }
+
+    function renderConfirmArea(){
+      var area = document.getElementById('confirmArea');
+      if (!area) return;
+      var NONE = '__none__'; // 아직 매장이 지정되지 않은 직원용
+      var hasUnassigned = state.staff.some(function(s){ return !s.branch_id; });
+      var branchId = getSavedBranch();
+      if (!state.branches.some(function(b){ return b.id === branchId; }) && !(branchId === NONE && hasUnassigned)) branchId = '';
+      var branchOptions = '<option value="">매장 선택</option>' + state.branches.map(function(b){
+        return '<option value="' + esc(b.id) + '"' + (b.id === branchId ? ' selected' : '') + '>' + esc(b.name) + '</option>';
+      }).join('') + (hasUnassigned ? '<option value="' + NONE + '"' + (branchId === NONE ? ' selected' : '') + '>매장 미지정</option>' : '');
+      var staffInBranch = branchId ? state.staff.filter(function(s){ return branchId === NONE ? !s.branch_id : s.branch_id === branchId; }) : [];
+      var staffOptions = '<option value="">이름 선택</option>' + staffInBranch.map(function(s){
+        var done = confirmedStaffIds[s.id];
+        return '<option value="' + esc(s.id) + '">' + esc(s.name) + (done ? ' ✓ 확인함' : '') + '</option>';
+      }).join('');
+      var note = '';
+      if (!state.branches.length) note = '아직 매장이 등록되지 않았어요. 관리자 화면 → 매장 관리에서 먼저 등록해주세요.';
+      else if (branchId && !staffInBranch.length) note = '이 매장에 등록된 직원이 없어요. 매니저에게 등록을 요청하세요. (관리자 화면 → 직원 명단)';
+      else if (branchId) note = '명단에 내 이름이 없으면 매니저에게 등록을 요청하세요. (관리자 화면 → 직원 명단)';
+
+      area.innerHTML =
+        '<div class="confirm-row">' +
+          '<select id="confirmBranch">' + branchOptions + '</select>' +
+          '<select id="confirmStaff"' + (branchId ? '' : ' disabled') + '>' + staffOptions + '</select>' +
+          '<button class="btn" id="btnConfirm">확인했어요</button>' +
+        '</div>' +
+        (note ? '<div class="confirm-note">' + esc(note) + '</div>' : '');
+
+      document.getElementById('confirmBranch').addEventListener('change', function(){
+        saveBranch(this.value);
+        renderConfirmArea();
+      });
+
+      document.getElementById('btnConfirm').addEventListener('click', function(){
+        var staffId = document.getElementById('confirmStaff').value;
+        if (!branchId){ toast('매장을 먼저 골라주세요.'); return; }
+        if (!staffId){ toast('본인 이름을 골라주세요.'); return; }
+        var staff = state.staff.filter(function(s){ return s.id === staffId; })[0];
+        if (confirmedStaffIds[staffId]){
+          toast(staff.name + '님은 이미 확인했어요. (' + fmtDate(confirmedStaffIds[staffId]) + ')');
+          return;
+        }
+        var btn = document.getElementById('btnConfirm');
+        btn.disabled = true;
+        sb.from('manual_confirmations').insert({ manual_id: m.id, staff_id: staffId, staff_name: staff.name }).select().then(function(res){
+          if (res.error){
+            btn.disabled = false;
+            // 23505 = 이미 같은 사람의 기록이 있음 (DB unique 제약)
+            if (res.error.code === '23505'){ toast(staff.name + '님은 이미 확인했어요.'); loadConfirmed(); return; }
+            toast('저장 실패: ' + res.error.message);
+            return;
+          }
+          var row = res.data[0];
+          confirmed.unshift(row);
+          confirmedStaffIds[staffId] = row.confirmed_at;
+          area.innerHTML = '<div class="confirm-done">확인 완료! ' + esc(staff.name) + '님, ' + fmtDate(row.confirmed_at) + '</div>' +
+            '<div class="confirm-note"><button class="mini-btn" id="btnConfirmAnother">다른 사람도 확인하기</button></div>';
+          document.getElementById('btnConfirmAnother').addEventListener('click', renderConfirmArea);
+          renderConfirmedList();
+          toast('확인 기록이 저장되었어요.');
+        });
+      });
+    }
+
+    function loadConfirmed(){
+      sb.from('manual_confirmations').select('*').eq('manual_id', m.id).order('confirmed_at', {ascending:false}).then(function(res){
+        if (res.error){ toast('확인 기록을 불러오지 못했어요.'); confirmed = []; }
+        else confirmed = res.data || [];
+        confirmedStaffIds = {};
+        confirmed.forEach(function(c){ if (c.staff_id && !confirmedStaffIds[c.staff_id]) confirmedStaffIds[c.staff_id] = c.confirmed_at; });
+        renderConfirmedList();
+        renderConfirmArea();
+      });
+    }
+
+    renderConfirmArea();
+    loadConfirmed();
   }
 
   // ===== 관리자 로그인 =====
@@ -553,6 +696,7 @@
       ['categories', '카테고리 관리'],
       ['branches', '매장 관리'],
       ['staff', '직원 명단'],
+      ['progress', '신입 진행률'],
       ['status', '확인 현황']
     ];
     var tabsHtml = tabs.map(function(t){
@@ -582,6 +726,7 @@
     else if (state.adminTab === 'categories') renderAdminCategories(body);
     else if (state.adminTab === 'branches') renderAdminBranches(body);
     else if (state.adminTab === 'staff') renderAdminStaff(body);
+    else if (state.adminTab === 'progress') renderAdminProgress(body);
     else if (state.adminTab === 'status') renderAdminStatus(body);
   }
 
@@ -593,7 +738,7 @@
     var rows = state.manuals.map(function(m){
       return (
         '<div class="list-row">' +
-          '<div class="info"><div class="t">' + esc(m.title) + '</div><div class="s">' + esc(categoryName(m.category_id)) + ' · 사진 ' + (m.photos||[]).length + '장 · 단계 ' + (m.steps||[]).length + '개</div></div>' +
+          '<div class="info"><div class="t">' + esc(m.title) + requiredBadge(m) + '</div><div class="s">' + esc(categoryName(m.category_id)) + ' · 사진 ' + (m.photos||[]).length + '장 · 단계 ' + (m.steps||[]).length + '개</div></div>' +
           '<div class="row-actions">' +
             '<button class="icon-btn" data-edit="' + esc(m.id) + '">수정</button>' +
             '<button class="icon-btn danger" data-del="' + esc(m.id) + '">삭제</button>' +
@@ -607,7 +752,7 @@
       rows;
 
     document.getElementById('btnNewManual').addEventListener('click', function(){
-      state.editingManual = { id:null, title:'', category_id: state.categories[0] ? state.categories[0].id : null, tags:[], youtube_url:'', photos:[], steps:[''] };
+      state.editingManual = { id:null, title:'', category_id: state.categories[0] ? state.categories[0].id : null, tags:[], youtube_url:'', photos:[], steps:[''], is_required:false };
       render();
     });
     body.querySelectorAll('[data-edit]').forEach(function(el){
@@ -659,6 +804,8 @@
       '<div class="form-card">' +
         '<div class="field"><label>제목</label><input type="text" id="fTitle" value="' + esc(draft.title) + '" placeholder="예: 컵홀더 접는 방법"></div>' +
         '<div class="field"><label>카테고리</label><select id="fCategory">' + catOptions + '</select></div>' +
+        '<div class="field"><label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="fRequired"' + (draft.is_required ? ' checked' : '') + '> 신입 필수 매뉴얼</label>' +
+          '<div class="hint">체크하면 홈의 "신입 필수" 목록에 들어가고, 신입 진행률에서 몇 명이 봤는지 셉니다.</div></div>' +
         '<div class="field"><label>사진</label>' +
           '<div class="photo-grid" id="photoGrid">' + photosHtml + '</div>' +
           '<label class="upload-btn">사진 추가하기<input type="file" id="fPhotoInput" accept="image/*" multiple style="display:none"></label>' +
@@ -680,6 +827,7 @@
     document.getElementById('fTitle').addEventListener('input', function(e){ draft.title = e.target.value; });
     document.getElementById('fCategory').addEventListener('change', function(e){ draft.category_id = e.target.value; });
     document.getElementById('fYoutube').addEventListener('input', function(e){ draft.youtube_url = e.target.value; });
+    document.getElementById('fRequired').addEventListener('change', function(e){ draft.is_required = e.target.checked; });
     document.getElementById('fTags').addEventListener('input', function(e){ draft.tags = e.target.value.split(',').map(function(t){ return t.trim(); }).filter(Boolean); });
 
     body.querySelectorAll('[data-step-input]').forEach(function(el){
@@ -758,6 +906,7 @@
         category_id: draft.category_id || null,
         tags: draft.tags || [],
         youtube_url: (draft.youtube_url||'').trim(),
+        is_required: !!draft.is_required,
         photos: draft.photos || [],
         steps: (draft.steps||[]).map(function(s){ return s.trim(); }).filter(Boolean),
         updated_at: new Date().toISOString()
@@ -945,7 +1094,7 @@
         }).join('');
         return (
           '<div class="list-row">' +
-            '<div class="info"><div class="t">' + esc(s.name) + '</div></div>' +
+            '<div class="info"><div class="t">' + esc(s.name) + '</div><div class="s">' + esc(fmtDate(s.created_at).slice(0, 10)) + ' 등록 · ' + daysSince(s.created_at) + '일째</div></div>' +
             '<div class="row-actions">' +
               '<select class="icon-btn" data-staff-branch="' + esc(s.id) + '">' + staffBranchOptions + '</select>' +
               '<button class="icon-btn danger" data-staff-del="' + esc(s.id) + '">삭제</button>' +
@@ -1011,6 +1160,88 @@
     });
   }
 
+  // --- 신입 진행률 (직원 1명 → 필수 매뉴얼 N개 중 M개) ---
+  function renderAdminProgress(body){
+    var required = requiredManuals();
+    var chips = ['<button class="chip' + (!state.progressBranchId ? ' active' : '') + '" data-branch="">전체</button>'];
+    state.branches.forEach(function(b){
+      chips.push('<button class="chip' + (state.progressBranchId === b.id ? ' active' : '') + '" data-branch="' + esc(b.id) + '">' + esc(b.name) + '</button>');
+    });
+
+    body.innerHTML =
+      '<div class="section-head"><h3>신입 진행률</h3><span class="badge req">필수 ' + required.length + '개</span></div>' +
+      '<div class="hint" style="margin-bottom:12px;">직원마다 "신입 필수" 매뉴얼을 몇 개 확인했는지 보여줘요. 등록 7일이 지났는데 남은 게 있으면 빨갛게 표시돼요.</div>' +
+      '<div class="chips">' + chips.join('') + '</div>' +
+      '<div id="progressResult"><div class="loading">불러오는 중…</div></div>';
+
+    body.querySelectorAll('[data-branch]').forEach(function(el){
+      el.addEventListener('click', function(){
+        state.progressBranchId = el.getAttribute('data-branch') || null;
+        render();
+      });
+    });
+
+    var result = document.getElementById('progressResult');
+    if (!required.length){
+      result.innerHTML = '<div class="empty">아직 "신입 필수"로 지정된 매뉴얼이 없어요.<br>매뉴얼 관리 → 수정에서 "신입 필수 매뉴얼"을 체크해주세요.</div>';
+      return;
+    }
+    var staffList = state.staff.filter(function(s){ return !state.progressBranchId || s.branch_id === state.progressBranchId; });
+    if (!staffList.length){
+      result.innerHTML = '<div class="empty">이 매장에 등록된 직원이 없어요.</div>';
+      return;
+    }
+
+    var requiredIds = required.map(function(m){ return m.id; });
+    sb.from('manual_confirmations').select('manual_id, staff_id, staff_name, confirmed_at').in('manual_id', requiredIds).then(function(res){
+      if (res.error){ result.innerHTML = '<div class="empty">불러오기 실패</div>'; return; }
+      var rows = res.data || [];
+      // staff_id → { manual_id: confirmed_at }. 옛 기록은 이름으로 매칭
+      var doneById = {}, doneByName = {};
+      rows.forEach(function(c){
+        var bucket = c.staff_id ? (doneById[c.staff_id] = doneById[c.staff_id] || {}) : (c.staff_name ? (doneByName[c.staff_name] = doneByName[c.staff_name] || {}) : null);
+        if (bucket && !bucket[c.manual_id]) bucket[c.manual_id] = c.confirmed_at;
+      });
+
+      var cards = staffList.map(function(s){
+        var done = Object.assign({}, doneByName[s.name] || {}, doneById[s.id] || {});
+        var remaining = required.filter(function(m){ return !done[m.id]; });
+        var doneCount = required.length - remaining.length;
+        var last = null;
+        Object.keys(done).forEach(function(k){ if (!last || done[k] > last) last = done[k]; });
+        var days = daysSince(s.created_at);
+        return { staff: s, remaining: remaining, doneCount: doneCount, last: last, days: days, late: remaining.length > 0 && days > 7 };
+      });
+      cards.sort(function(a, b){
+        if (a.late !== b.late) return a.late ? -1 : 1;
+        if (a.remaining.length !== b.remaining.length) return b.remaining.length - a.remaining.length;
+        return a.staff.name.localeCompare(b.staff.name);
+      });
+
+      var doneAll = cards.filter(function(c){ return !c.remaining.length; }).length;
+      var lateCount = cards.filter(function(c){ return c.late; }).length;
+      var summary = '직원 ' + cards.length + '명 중 완료 ' + doneAll + '명' + (lateCount ? ' · <span class="badge late">첫 주 지났는데 미완료 ' + lateCount + '명</span>' : '');
+
+      result.innerHTML = '<div class="progress-summary">' + summary + '</div>' + cards.map(function(c){
+        var pct = required.length ? Math.round(c.doneCount / required.length * 100) : 0;
+        var isDone = !c.remaining.length;
+        return (
+          '<div class="progress-card">' +
+            '<div class="top">' +
+              '<div><div class="name">' + esc(c.staff.name) + (c.late ? ' <span class="badge late">첫 주 지남</span>' : '') + '</div>' +
+                '<div class="meta">' + esc(branchName(c.staff.branch_id)) + ' · 등록 ' + c.days + '일째' + (c.last ? ' · 마지막 확인 ' + esc(fmtDate(c.last).slice(0, 10)) : '') + '</div></div>' +
+              '<div class="count' + (isDone ? ' done' : '') + '">' + c.doneCount + ' / ' + required.length + '</div>' +
+            '</div>' +
+            '<div class="progress-bar"><i class="' + (isDone ? 'done' : '') + '" style="width:' + pct + '%"></i></div>' +
+            (isDone
+              ? '<div class="remain" style="color:var(--ok);">필수 매뉴얼을 모두 확인했어요.</div>'
+              : '<div class="remain">남은 것: ' + c.remaining.map(function(m){ return '<span>' + esc(m.title) + '</span>'; }).join('') + '</div>') +
+          '</div>'
+        );
+      }).join('');
+    });
+  }
+
   // --- 확인 현황 ---
   function renderAdminStatus(body){
     var options = state.manuals.map(function(m){
@@ -1036,18 +1267,23 @@
       sb.from('manual_confirmations').select('*').eq('manual_id', state.statusManualId).order('confirmed_at', {ascending:false}).then(function(res){
         if (res.error){ result.innerHTML = '<div class="empty">불러오기 실패</div>'; return; }
         var confirmed = res.data || [];
-        var latestByName = {};
+        // 직원 ID로 연결된 기록이 기본, 옛 기록(staff_id 없음)은 이름으로 맞춰 봄
+        var byStaffId = {}, byName = {};
         confirmed.forEach(function(c){
-          if (!latestByName[c.staff_name]) latestByName[c.staff_name] = c.confirmed_at;
+          if (c.staff_id){ if (!byStaffId[c.staff_id]) byStaffId[c.staff_id] = c.confirmed_at; }
+          else if (c.staff_name){ if (!byName[c.staff_name]) byName[c.staff_name] = c.confirmed_at; }
         });
-        var confirmedNames = Object.keys(latestByName);
-        var notConfirmed = state.staff.filter(function(s){ return confirmedNames.indexOf(s.name) === -1; });
+        var staffNames = {};
+        state.staff.forEach(function(s){ staffNames[s.name] = true; });
 
-        var combined = confirmedNames.map(function(name){
-          return { name: name, branch: staffBranchByName(name), ok: true, date: latestByName[name] };
-        }).concat(notConfirmed.map(function(s){
-          return { name: s.name, branch: branchName(s.branch_id), ok: false, date: null };
-        }));
+        var combined = state.staff.map(function(s){
+          var date = byStaffId[s.id] || byName[s.name] || null;
+          return { name: s.name, branch: branchName(s.branch_id), ok: !!date, date: date };
+        });
+        // 명단에 없는 이름으로 남은 옛 기록도 보여 줌
+        Object.keys(byName).forEach(function(name){
+          if (!staffNames[name]) combined.push({ name: name, branch: '옛 기록', ok: true, date: byName[name] });
+        });
         combined.sort(function(a,b){
           if (a.branch !== b.branch) return a.branch.localeCompare(b.branch);
           return a.name.localeCompare(b.name);
