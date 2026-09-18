@@ -6,7 +6,7 @@
 <title>신입 직원 매뉴얼북</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#a8632f">
+<meta name="theme-color" content="#642e2c">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -24,9 +24,9 @@
     --ink-faint:#9a9086;
     --line:#e5ddd0;
     --line-strong:#d3c7b4;
-    --accent:#a8632f;
-    --accent-soft:#f3e3d1;
-    --accent-ink:#ffffff;
+    --accent:#642e2c;
+    --accent-soft:#f0e2e0;
+    --accent-ink:#f7efe4;
     --danger:#b5432c;
     --danger-soft:#f6dfd8;
     --ok:#2f7a4f;
@@ -47,9 +47,9 @@
       --ink-faint:#847a6e;
       --line:#3a3226;
       --line-strong:#4a4030;
-      --accent:#e0a066;
-      --accent-soft:#3a2c1c;
-      --accent-ink:#241a0e;
+      --accent:#d9a39e;
+      --accent-soft:#3b2523;
+      --accent-ink:#2a1412;
       --danger:#e59078;
       --danger-soft:#3a241d;
       --ok:#7bc79a;
@@ -75,6 +75,11 @@
   .head .sub{ font-size:12px; color:var(--ink-faint); margin-top:2px; }
   .head-link{ font-size:13px; color:var(--ink-soft); text-decoration:none; border:1px solid var(--line); padding:7px 12px; border-radius:999px; background:var(--surface); cursor:pointer; white-space:nowrap; }
   .head-link:hover{ border-color:var(--line-strong); }
+  .brand{ display:flex; align-items:center; gap:12px; min-width:0; }
+  .brand img{ width:44px; height:44px; border-radius:12px; flex-shrink:0; box-shadow:var(--shadow); }
+  .brand .kicker{ font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; font-weight:600; color:var(--accent); margin-bottom:1px; }
+  .center-card .logo{ width:76px; height:76px; border-radius:20px; display:block; margin:0 auto 16px; box-shadow:var(--shadow); }
+  .foot{ text-align:center; margin-top:44px; color:var(--ink-faint); font-size:11px; letter-spacing:.16em; }
 
   /* search */
   .search-box{ position:relative; margin-bottom:16px; }
@@ -444,7 +449,7 @@
     return (
       backHtml +
       '<div class="head">' +
-        '<div><h1>신입 직원 매뉴얼북</h1><div class="sub">' + esc(subtitle || '검색하면 바로 찾아요') + '</div></div>' +
+        '<div class="brand"><img src="logo.png" alt="Bon Noël"><div><div class="kicker">Bon Noël</div><h1>신입 직원 매뉴얼북</h1><div class="sub">' + esc(subtitle || '검색하면 바로 찾아요') + '</div></div></div>' +
         '<button class="head-link" id="btnAdminLink">' + esc(linkLabel) + '</button>' +
       '</div>'
     );
@@ -464,7 +469,8 @@
       renderHeader() +
       '<div class="search-box"><span class="icon">&#128269;</span><input id="searchInput" type="text" placeholder="예: 컵홀더, 단팥빵, 근로계약서" value="' + esc(state.query) + '"></div>' +
       '<div class="chips">' + chips.join('') + '</div>' +
-      '<div class="manual-list">' + manualListHtml(visibleManuals()) + '</div>';
+      '<div class="manual-list">' + manualListHtml(visibleManuals()) + '</div>' +
+      '<div class="foot">BON NOËL · SINCE 2014</div>';
 
     bindHeaderEvents();
 
@@ -662,6 +668,7 @@
   function renderAdminLogin(){
     app.innerHTML =
       '<div class="center-card">' +
+        '<img class="logo" src="logo.png" alt="Bon Noël">' +
         '<h2>관리자 화면</h2>' +
         '<p>비밀번호를 입력해주세요.</p>' +
         '<input id="pinInput" type="password" inputmode="numeric" maxlength="12" placeholder="••••">' +
@@ -705,7 +712,7 @@
     }).join('');
 
     app.innerHTML =
-      '<div class="head"><div><h1>관리자 화면</h1><div class="sub">매뉴얼북 관리</div></div>' +
+      '<div class="head"><div class="brand"><img src="logo.png" alt="Bon Noël"><div><div class="kicker">Bon Noël</div><h1>관리자 화면</h1><div class="sub">매뉴얼북 관리</div></div></div>' +
         '<button class="head-link" id="btnLogout">직원 화면으로</button></div>' +
       '<div class="admin-tabs">' + tabsHtml + '</div>' +
       '<div id="adminBody"></div>';
