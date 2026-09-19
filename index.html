@@ -75,7 +75,7 @@
   .head .sub{ font-size:12px; color:var(--ink-faint); margin-top:2px; }
   .head-link{ font-size:13px; color:var(--ink-soft); text-decoration:none; border:1px solid var(--line); padding:7px 12px; border-radius:999px; background:var(--surface); cursor:pointer; white-space:nowrap; }
   .head-link:hover{ border-color:var(--line-strong); }
-  .brand{ display:flex; align-items:center; gap:12px; min-width:0; }
+  .brand{ display:flex; align-items:center; gap:12px; min-width:0; cursor:pointer; }
   .brand img{ width:44px; height:44px; border-radius:12px; flex-shrink:0; box-shadow:var(--shadow); }
   .brand .kicker{ font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; font-weight:600; color:var(--accent); margin-bottom:1px; }
   .center-card .logo{ width:76px; height:76px; border-radius:20px; display:block; margin:0 auto 16px; box-shadow:var(--shadow); }
@@ -446,13 +446,25 @@
     opts = opts || {};
     var linkLabel = state.isAdmin ? '관리자 화면' : '관리자';
     var backHtml = opts.back ? '<button class="back-btn" id="btnBack">&larr; 목록으로</button>' : '';
+    var homeBtn = opts.back ? '<button class="head-link" id="btnHome">홈</button>' : '';
     return (
       backHtml +
       '<div class="head">' +
-        '<div class="brand"><img src="logo.png" alt="Bon Noël"><div><div class="kicker">Bon Noël</div><h1>신입 직원 매뉴얼북</h1><div class="sub">' + esc(subtitle || '검색하면 바로 찾아요') + '</div></div></div>' +
-        '<button class="head-link" id="btnAdminLink">' + esc(linkLabel) + '</button>' +
+        '<div class="brand" id="brandHome" title="홈으로"><img src="logo.png" alt="Bon Noël"><div><div class="kicker">Bon Noël</div><h1>신입 직원 매뉴얼북</h1><div class="sub">' + esc(subtitle || '검색하면 바로 찾아요') + '</div></div></div>' +
+        '<div style="display:flex; gap:6px; flex-shrink:0;">' + homeBtn + '<button class="head-link" id="btnAdminLink">' + esc(linkLabel) + '</button></div>' +
       '</div>'
     );
+  }
+
+  // 로고나 "홈" 버튼 → 검색·필터 초기화하고 메인으로
+  function goHome(){
+    state.view = 'home';
+    state.activeCategory = null;
+    state.onlyRequired = false;
+    state.query = '';
+    state.editingManual = null;
+    render();
+    window.scrollTo(0,0);
   }
 
   function renderHome(){
@@ -515,6 +527,10 @@
       render();
       window.scrollTo(0,0);
     });
+    var brand = document.getElementById('brandHome');
+    if (brand) brand.addEventListener('click', goHome);
+    var home = document.getElementById('btnHome');
+    if (home) home.addEventListener('click', goHome);
   }
 
   function renderDetail(){
@@ -712,15 +728,14 @@
     }).join('');
 
     app.innerHTML =
-      '<div class="head"><div class="brand"><img src="logo.png" alt="Bon Noël"><div><div class="kicker">Bon Noël</div><h1>관리자 화면</h1><div class="sub">매뉴얼북 관리</div></div></div>' +
+      '<div class="head"><div class="brand" id="brandHome" title="홈으로"><img src="logo.png" alt="Bon Noël"><div><div class="kicker">Bon Noël</div><h1>관리자 화면</h1><div class="sub">매뉴얼북 관리</div></div></div>' +
         '<button class="head-link" id="btnLogout">직원 화면으로</button></div>' +
       '<div class="admin-tabs">' + tabsHtml + '</div>' +
       '<div id="adminBody"></div>';
 
-    document.getElementById('btnLogout').addEventListener('click', function(){
-      state.view = 'home';
-      render();
-    });
+    document.getElementById('btnLogout').addEventListener('click', goHome);
+    var adminBrand = document.getElementById('brandHome');
+    if (adminBrand) adminBrand.addEventListener('click', goHome);
     document.querySelectorAll('.admin-tab').forEach(function(el){
       el.addEventListener('click', function(){
         state.adminTab = el.getAttribute('data-tab');
