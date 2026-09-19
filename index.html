@@ -881,8 +881,8 @@
       );
     }).join('');
 
-    var photosHtml = (draft.photos||[]).map(function(p){
-      return '<div class="photo-item"><img src="' + esc(p.url) + '"><span class="rm" data-photo-del="' + esc(p.path) + '">&times;</span></div>';
+    var photosHtml = (draft.photos||[]).map(function(p, i){
+      return '<div class="photo-item"><img src="' + esc(p.url) + '"><span class="rm" data-photo-del="' + i + '">&times;</span></div>';
     }).join('');
 
     body.innerHTML =
@@ -895,6 +895,12 @@
           '<div class="photo-grid" id="photoGrid">' + photosHtml + '</div>' +
           '<label class="upload-btn">사진 추가하기<input type="file" id="fPhotoInput" accept="image/*" multiple style="display:none"></label>' +
           '<div class="hint" id="uploadHint"></div>' +
+          (state.supplies.length ? (
+            '<div class="hint" style="margin-top:10px; margin-bottom:6px;">포장 비품에서 가져오기 (클릭하면 바로 추가돼요)</div>' +
+            '<div class="supply-pick-grid">' + state.supplies.map(function(s){
+              return '<div class="supply-pick-item" data-photo-from-supply="' + esc(s.id) + '"><img src="' + esc(s.photo_url) + '" alt=""><div class="n">' + esc(s.name) + '</div></div>';
+            }).join('') + '</div>'
+          ) : '') +
         '</div>' +
         '<div class="field"><label>유튜브 링크 (비공개 링크 가능)</label><input type="url" id="fYoutube" value="' + esc(draft.youtube_url||'') + '" placeholder="https://youtu.be/..."></div>' +
         '<div class="field"><label>단계별 설명</label>' +
@@ -1006,14 +1012,23 @@
 
     body.querySelectorAll('[data-photo-del]').forEach(function(el){
       el.addEventListener('click', function(){
-        var path = el.getAttribute('data-photo-del');
-        var i = draft.photos.findIndex(function(p){ return p.path === path; });
-        if (i === -1) return;
+        var i = +el.getAttribute('data-photo-del');
         var removed = draft.photos.splice(i, 1)[0];
         render();
         if (removed && removed.path){
           sb.storage.from(PHOTO_BUCKET).remove([removed.path]).catch(function(){});
         }
+      });
+    });
+
+    body.querySelectorAll('[data-photo-from-supply]').forEach(function(el){
+      el.addEventListener('click', function(){
+        var id = el.getAttribute('data-photo-from-supply');
+        var s = state.supplies.filter(function(x){ return x.id === id; })[0];
+        if (!s) return;
+        draft.photos.push({ path: null, url: s.photo_url });
+        toast('사진을 추가했어요.');
+        render();
       });
     });
 
