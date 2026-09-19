@@ -1095,7 +1095,10 @@
         '<div class="supply-lib-item">' +
           '<img src="' + esc(s.photo_url) + '" alt="">' +
           '<div class="n">' + esc(s.name) + '</div>' +
-          '<button class="icon-btn danger" data-supply-del="' + esc(s.id) + '" style="width:100%;">삭제</button>' +
+          '<div style="display:flex; gap:4px;">' +
+            '<button class="icon-btn" data-supply-rename="' + esc(s.id) + '" style="flex:1;">수정</button>' +
+            '<button class="icon-btn danger" data-supply-del="' + esc(s.id) + '" style="flex:1;">삭제</button>' +
+          '</div>' +
         '</div>'
       );
     }).join('') || '<div class="empty">등록된 비품 사진이 없어요.</div>';
@@ -1134,6 +1137,23 @@
       }).catch(function(err){
         toast('추가 실패: ' + (err.message || err));
         hint.textContent = '';
+      });
+    });
+
+    body.querySelectorAll('[data-supply-rename]').forEach(function(el){
+      el.addEventListener('click', function(){
+        var id = el.getAttribute('data-supply-rename');
+        var s = state.supplies.filter(function(x){ return x.id === id; })[0];
+        var name = prompt('새 이름을 입력하세요.', s.name);
+        if (name == null) return;
+        name = name.trim();
+        if (!name) return;
+        sb.from('manual_supplies').update({ name: name }).eq('id', id).then(function(res){
+          if (res.error){ toast('변경 실패: ' + res.error.message); return; }
+          s.name = name;
+          toast('이름을 변경했어요.');
+          render();
+        });
       });
     });
 
