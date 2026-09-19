@@ -117,7 +117,9 @@
   .detail-card{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-l); padding:20px; box-shadow:var(--shadow); }
   .detail-card .cat{ font-size:12px; color:var(--accent); font-weight:600; margin-bottom:6px; }
   .detail-card h2{ margin:0 0 14px; font-size:21px; }
-  .photo-strip{ display:flex; gap:10px; overflow-x:auto; margin-bottom:16px; padding-bottom:4px; }
+  .photo-group{ margin-bottom:16px; }
+  .photo-group h4{ font-size:12.5px; color:var(--ink-soft); margin:0 0 8px; font-weight:600; }
+  .photo-strip{ display:flex; gap:10px; overflow-x:auto; margin-bottom:0; padding-bottom:4px; }
   .photo-strip img{ height:180px; width:auto; border-radius:var(--radius-m); flex-shrink:0; border:1px solid var(--line); object-fit:cover; }
   .video-wrap{ position:relative; padding-top:56.25%; border-radius:var(--radius-m); overflow:hidden; margin-bottom:18px; background:#000; }
   .video-wrap iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; }
@@ -564,10 +566,15 @@
     if (!m){ state.view = 'home'; return render(); }
     var ytId = extractYoutubeId(m.youtube_url);
     var photos = m.photos || [];
+    var finalPhotos = photos.filter(function(p){ return p.type !== 'process'; });
+    var processPhotos = photos.filter(function(p){ return p.type === 'process'; });
 
-    var photosHtml = photos.length ? (
-      '<div class="photo-strip">' + photos.map(function(p){ return '<img src="' + esc(p.url) + '" alt="">'; }).join('') + '</div>'
-    ) : '';
+    function photoStrip(list){
+      return list.length ? ('<div class="photo-strip">' + list.map(function(p){ return '<img src="' + esc(p.url) + '" alt="">'; }).join('') + '</div>') : '';
+    }
+    var photosHtml =
+      (finalPhotos.length ? '<div class="photo-group"><h4>완성 사진</h4>' + photoStrip(finalPhotos) + '</div>' : '') +
+      (processPhotos.length ? '<div class="photo-group"><h4>제조 사진</h4>' + photoStrip(processPhotos) + '</div>' : '');
 
     var pickedSupplies = (m.supply_ids||[]).map(function(id){
       return state.supplies.filter(function(s){ return s.id === id; })[0];
@@ -598,9 +605,9 @@
         '<div class="cat">' + esc(categoryName(m.category_id)) + '</div>' +
         '<h2>' + esc(m.title) + requiredBadge(m) + '</h2>' +
         photosHtml +
-        suppliesHtml +
         videoHtml +
         stepsHtml +
+        suppliesHtml +
         tagsHtml +
         '<div class="confirm-box">' +
           '<p>다 확인하셨으면 매장과 본인 이름을 고르고 버튼을 눌러주세요.</p>' +
@@ -870,9 +877,13 @@
       );
     }).join('');
 
-    var photosHtml = (draft.photos||[]).map(function(p, i){
-      return '<div class="photo-item"><img src="' + esc(p.url) + '"><span class="rm" data-photo-del="' + i + '">&times;</span></div>';
-    }).join('');
+    function photoGridHtml(list){
+      return list.map(function(p){
+        return '<div class="photo-item"><img src="' + esc(p.url) + '"><span class="rm" data-photo-del="' + esc(p.path) + '">&times;</span></div>';
+      }).join('');
+    }
+    var finalPhotos = (draft.photos||[]).filter(function(p){ return p.type !== 'process'; });
+    var processPhotos = (draft.photos||[]).filter(function(p){ return p.type === 'process'; });
 
     body.innerHTML =
       '<div class="form-card">' +
@@ -880,19 +891,24 @@
         '<div class="field"><label>카테고리</label><select id="fCategory">' + catOptions + '</select></div>' +
         '<div class="field"><label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="fRequired"' + (draft.is_required ? ' checked' : '') + '> 신입 필수 매뉴얼</label>' +
           '<div class="hint">체크하면 홈의 "신입 필수" 목록에 들어가고, 신입 진행률에서 몇 명이 봤는지 셉니다.</div></div>' +
-        '<div class="field"><label>사진</label>' +
-          '<div class="photo-grid" id="photoGrid">' + photosHtml + '</div>' +
-          '<label class="upload-btn">사진 추가하기<input type="file" id="fPhotoInput" accept="image/*" multiple style="display:none"></label>' +
-          '<div class="hint" id="uploadHint"></div>' +
+        '<div class="field"><label>완성 사진</label>' +
+          '<div class="photo-grid" id="photoGridFinal">' + photoGridHtml(finalPhotos) + '</div>' +
+          '<label class="upload-btn">사진 추가하기<input type="file" id="fPhotoInputFinal" accept="image/*" multiple style="display:none"></label>' +
+          '<div class="hint" id="uploadHintFinal"></div>' +
         '</div>' +
-        '<div class="field"><label>포장 비품 (완성 사진 + 필요한 포장재를 함께 보여줘요)</label>' +
-          '<div class="supply-pick-grid" id="supplyPickGrid">' + supplyPickHtml(draft) + '</div>' +
-          (state.supplies.length ? '' : '<div class="hint">등록된 비품 사진이 없어요. 관리자 화면 → 포장 비품에서 먼저 등록해주세요.</div>') +
+        '<div class="field"><label>제조 사진 (선택 — 만드는 과정을 따로 보여주고 싶을 때)</label>' +
+          '<div class="photo-grid" id="photoGridProcess">' + photoGridHtml(processPhotos) + '</div>' +
+          '<label class="upload-btn">사진 추가하기<input type="file" id="fPhotoInputProcess" accept="image/*" multiple style="display:none"></label>' +
+          '<div class="hint" id="uploadHintProcess"></div>' +
         '</div>' +
         '<div class="field"><label>유튜브 링크 (비공개 링크 가능)</label><input type="url" id="fYoutube" value="' + esc(draft.youtube_url||'') + '" placeholder="https://youtu.be/..."></div>' +
         '<div class="field"><label>단계별 설명</label>' +
           '<div id="stepsList">' + stepsHtml + '</div>' +
           '<button class="mini-btn" id="btnAddStep">+ 단계 추가</button>' +
+        '</div>' +
+        '<div class="field"><label>포장 비품 (완성 사진 + 필요한 포장재를 함께 보여줘요)</label>' +
+          '<div class="supply-pick-grid" id="supplyPickGrid">' + supplyPickHtml(draft) + '</div>' +
+          (state.supplies.length ? '' : '<div class="hint">등록된 비품 사진이 없어요. 관리자 화면 → 포장 비품에서 먼저 등록해주세요.</div>') +
         '</div>' +
         '<div class="field"><label>태그 (쉼표로 구분)</label><input type="text" id="fTags" value="' + esc((draft.tags||[]).join(', ')) + '" placeholder="예: 포장, 컵홀더, 테이크아웃"></div>' +
         '<div class="form-actions">' +
@@ -950,7 +966,9 @@
 
     body.querySelectorAll('[data-photo-del]').forEach(function(el){
       el.addEventListener('click', function(){
-        var i = +el.getAttribute('data-photo-del');
+        var path = el.getAttribute('data-photo-del');
+        var i = draft.photos.findIndex(function(p){ return p.path === path; });
+        if (i === -1) return;
         var removed = draft.photos.splice(i, 1)[0];
         render();
         if (removed && removed.path){
@@ -959,27 +977,31 @@
       });
     });
 
-    document.getElementById('fPhotoInput').addEventListener('change', function(e){
-      var files = Array.prototype.slice.call(e.target.files || []);
-      if (!files.length) return;
-      var hint = document.getElementById('uploadHint');
-      hint.textContent = '업로드 중… (' + files.length + '장)';
-      var manualKey = draft.id || 'new-' + Date.now();
-      Promise.all(files.map(function(file){
-        var path = manualKey + '/' + uid() + '-' + file.name.replace(/[^a-zA-Z0-9_.-]/g, '_');
-        return sb.storage.from(PHOTO_BUCKET).upload(path, file).then(function(res){
-          if (res.error) throw res.error;
-          var pub = sb.storage.from(PHOTO_BUCKET).getPublicUrl(path);
-          draft.photos.push({ path: path, url: pub.data.publicUrl });
+    function bindPhotoUpload(inputId, hintId, type){
+      document.getElementById(inputId).addEventListener('change', function(e){
+        var files = Array.prototype.slice.call(e.target.files || []);
+        if (!files.length) return;
+        var hint = document.getElementById(hintId);
+        hint.textContent = '업로드 중… (' + files.length + '장)';
+        var manualKey = draft.id || 'new-' + Date.now();
+        Promise.all(files.map(function(file){
+          var path = manualKey + '/' + uid() + '-' + file.name.replace(/[^a-zA-Z0-9_.-]/g, '_');
+          return sb.storage.from(PHOTO_BUCKET).upload(path, file).then(function(res){
+            if (res.error) throw res.error;
+            var pub = sb.storage.from(PHOTO_BUCKET).getPublicUrl(path);
+            draft.photos.push({ path: path, url: pub.data.publicUrl, type: type });
+          });
+        })).then(function(){
+          render();
+          toast('사진을 업로드했어요.');
+        }).catch(function(err){
+          toast('업로드 실패: ' + (err.message || err));
+          render();
         });
-      })).then(function(){
-        render();
-        toast('사진을 업로드했어요.');
-      }).catch(function(err){
-        toast('업로드 실패: ' + (err.message || err));
-        render();
       });
-    });
+    }
+    bindPhotoUpload('fPhotoInputFinal', 'uploadHintFinal', 'final');
+    bindPhotoUpload('fPhotoInputProcess', 'uploadHintProcess', 'process');
 
     document.getElementById('btnCancelForm').addEventListener('click', function(){
       state.editingManual = null;
@@ -1090,11 +1112,15 @@
 
   // --- 포장 비품 관리 (재사용 가능한 비품 사진 라이브러리) ---
   function renderAdminSupplies(body){
-    var itemsHtml = state.supplies.map(function(s){
+    var itemsHtml = state.supplies.map(function(s, i){
       return (
         '<div class="supply-lib-item">' +
           '<img src="' + esc(s.photo_url) + '" alt="">' +
           '<div class="n">' + esc(s.name) + '</div>' +
+          '<div style="display:flex; gap:4px; margin-bottom:4px;">' +
+            '<button class="mini-btn" data-supply-up="' + esc(s.id) + '"' + (i === 0 ? ' disabled' : '') + ' style="flex:1;">위로</button>' +
+            '<button class="mini-btn" data-supply-down="' + esc(s.id) + '"' + (i === state.supplies.length-1 ? ' disabled' : '') + ' style="flex:1;">아래로</button>' +
+          '</div>' +
           '<div style="display:flex; gap:4px;">' +
             '<button class="icon-btn" data-supply-rename="' + esc(s.id) + '" style="flex:1;">수정</button>' +
             '<button class="icon-btn danger" data-supply-del="' + esc(s.id) + '" style="flex:1;">삭제</button>' +
@@ -1137,6 +1163,33 @@
       }).catch(function(err){
         toast('추가 실패: ' + (err.message || err));
         hint.textContent = '';
+      });
+    });
+
+    function swapSupplyOrder(i, j){
+      var arr = state.supplies;
+      var tmp = arr[i].sort_order;
+      arr[i].sort_order = arr[j].sort_order;
+      arr[j].sort_order = tmp;
+      var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+      render();
+      Promise.all([
+        sb.from('manual_supplies').update({ sort_order: arr[i].sort_order }).eq('id', arr[i].id),
+        sb.from('manual_supplies').update({ sort_order: arr[j].sort_order }).eq('id', arr[j].id)
+      ]).catch(function(){ toast('순서 저장 실패'); });
+    }
+    body.querySelectorAll('[data-supply-up]').forEach(function(el){
+      el.addEventListener('click', function(){
+        var id = el.getAttribute('data-supply-up');
+        var i = state.supplies.findIndex(function(s){ return s.id === id; });
+        if (i > 0) swapSupplyOrder(i, i-1);
+      });
+    });
+    body.querySelectorAll('[data-supply-down]').forEach(function(el){
+      el.addEventListener('click', function(){
+        var id = el.getAttribute('data-supply-down');
+        var i = state.supplies.findIndex(function(s){ return s.id === id; });
+        if (i !== -1 && i < state.supplies.length-1) swapSupplyOrder(i, i+1);
       });
     });
 
