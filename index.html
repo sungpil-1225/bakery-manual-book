@@ -188,6 +188,28 @@
 
   .form-actions{ display:flex; gap:8px; justify-content:flex-end; margin-top:18px; }
 
+  /* 포장 비품 고르기 (매뉴얼 편집 화면) */
+  .supply-pick-grid{ display:flex; flex-wrap:wrap; gap:10px; }
+  .supply-pick-item{ width:92px; cursor:pointer; border:2px solid transparent; border-radius:var(--radius-s); padding:3px; text-align:center; }
+  .supply-pick-item img{ width:100%; height:74px; object-fit:cover; border-radius:6px; border:1px solid var(--line); display:block; }
+  .supply-pick-item .n{ font-size:11px; color:var(--ink-soft); margin-top:4px; line-height:1.3; word-break:keep-all; }
+  .supply-pick-item.selected{ border-color:var(--accent); background:var(--accent-soft); }
+  .supply-pick-item.selected .n{ color:var(--accent); font-weight:600; }
+
+  /* 포장 비품 (직원 상세 화면) */
+  .supply-section{ margin-bottom:18px; }
+  .supply-section h4{ font-size:12.5px; color:var(--ink-soft); margin:0 0 8px; font-weight:600; }
+  .supply-strip{ display:flex; flex-wrap:wrap; gap:10px; }
+  .supply-strip .sc{ width:88px; text-align:center; }
+  .supply-strip .sc img{ width:100%; height:70px; object-fit:cover; border-radius:var(--radius-s); border:1px solid var(--line); }
+  .supply-strip .sc span{ display:block; font-size:11px; color:var(--ink-soft); margin-top:4px; }
+
+  /* 포장 비품 관리 (관리자 화면) */
+  .supply-lib-grid{ display:flex; flex-wrap:wrap; gap:12px; }
+  .supply-lib-item{ width:104px; text-align:center; }
+  .supply-lib-item img{ width:100%; height:84px; object-fit:cover; border-radius:var(--radius-s); border:1px solid var(--line); }
+  .supply-lib-item .n{ font-size:12px; margin:5px 0 4px; word-break:keep-all; }
+
   .toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--paper); padding:11px 18px; border-radius:999px; font-size:13.5px; box-shadow:var(--shadow); z-index:50; opacity:0; pointer-events:none; transition:opacity .2s; }
   .toast.show{ opacity:1; }
 
@@ -302,6 +324,7 @@
     loaded: false,
     categories: [],
     branches: [],
+    supplies: [],
     manuals: [],
     staff: [],
     confirmations: [],   // 현재 열어본 매뉴얼의 확인 기록만 필요할 때 불러옴
@@ -342,17 +365,20 @@
       sb.from('manual_categories').select('*').order('sort_order', {ascending:true}),
       sb.from('manuals').select('*').order('created_at', {ascending:false}),
       sb.from('manual_staff').select('*').order('name', {ascending:true}),
-      sb.from('manual_branches').select('*').order('sort_order', {ascending:true})
+      sb.from('manual_branches').select('*').order('sort_order', {ascending:true}),
+      sb.from('manual_supplies').select('*').order('sort_order', {ascending:true})
     ]).then(function(results){
-      var catRes = results[0], manRes = results[1], staffRes = results[2], branchRes = results[3];
+      var catRes = results[0], manRes = results[1], staffRes = results[2], branchRes = results[3], supplyRes = results[4];
       if (catRes.error) throw catRes.error;
       if (manRes.error) throw manRes.error;
       if (staffRes.error) throw staffRes.error;
       if (branchRes.error) throw branchRes.error;
+      if (supplyRes.error) throw supplyRes.error;
       state.categories = catRes.data || [];
       state.manuals = manRes.data || [];
       state.staff = staffRes.data || [];
       state.branches = branchRes.data || [];
+      state.supplies = supplyRes.data || [];
       state.loaded = true;
       render();
     }).catch(function(err){
@@ -543,6 +569,15 @@
       '<div class="photo-strip">' + photos.map(function(p){ return '<img src="' + esc(p.url) + '" alt="">'; }).join('') + '</div>'
     ) : '';
 
+    var pickedSupplies = (m.supply_ids||[]).map(function(id){
+      return state.supplies.filter(function(s){ return s.id === id; })[0];
+    }).filter(Boolean);
+    var suppliesHtml = pickedSupplies.length ? (
+      '<div class="supply-section"><h4>포장 비품</h4><div class="supply-strip">' +
+        pickedSupplies.map(function(s){ return '<div class="sc"><img src="' + esc(s.photo_url) + '" alt=""><span>' + esc(s.name) + '</span></div>'; }).join('') +
+      '</div></div>'
+    ) : '';
+
     var videoHtml = ytId ? (
       '<div class="video-wrap"><iframe src="https://www.youtube.com/embed/' + esc(ytId) + '" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>'
     ) : '';
@@ -563,6 +598,7 @@
         '<div class="cat">' + esc(categoryName(m.category_id)) + '</div>' +
         '<h2>' + esc(m.title) + requiredBadge(m) + '</h2>' +
         photosHtml +
+        suppliesHtml +
         videoHtml +
         stepsHtml +
         tagsHtml +
@@ -718,6 +754,7 @@
     var tabs = [
       ['manuals', '매뉴얼 관리'],
       ['categories', '카테고리 관리'],
+      ['supplies', '포장 비품'],
       ['branches', '매장 관리'],
       ['staff', '직원 명단'],
       ['progress', '신입 진행률'],
@@ -747,6 +784,7 @@
     var body = document.getElementById('adminBody');
     if (state.adminTab === 'manuals') renderAdminManuals(body);
     else if (state.adminTab === 'categories') renderAdminCategories(body);
+    else if (state.adminTab === 'supplies') renderAdminSupplies(body);
     else if (state.adminTab === 'branches') renderAdminBranches(body);
     else if (state.adminTab === 'staff') renderAdminStaff(body);
     else if (state.adminTab === 'progress') renderAdminProgress(body);
@@ -775,7 +813,7 @@
       rows;
 
     document.getElementById('btnNewManual').addEventListener('click', function(){
-      state.editingManual = { id:null, title:'', category_id: state.categories[0] ? state.categories[0].id : null, tags:[], youtube_url:'', photos:[], steps:[''], is_required:false };
+      state.editingManual = { id:null, title:'', category_id: state.categories[0] ? state.categories[0].id : null, tags:[], youtube_url:'', photos:[], steps:[''], is_required:false, supply_ids:[] };
       render();
     });
     body.querySelectorAll('[data-edit]').forEach(function(el){
@@ -783,6 +821,7 @@
         var m = state.manuals.filter(function(x){ return x.id === el.getAttribute('data-edit'); })[0];
         state.editingManual = JSON.parse(JSON.stringify(m));
         if (!state.editingManual.steps || !state.editingManual.steps.length) state.editingManual.steps = [''];
+        if (!state.editingManual.supply_ids) state.editingManual.supply_ids = [];
         render();
       });
     });
@@ -798,6 +837,18 @@
         });
       });
     });
+  }
+
+  function supplyPickHtml(draft){
+    return state.supplies.map(function(s){
+      var on = (draft.supply_ids||[]).indexOf(s.id) !== -1;
+      return (
+        '<div class="supply-pick-item' + (on ? ' selected' : '') + '" data-supply-pick="' + esc(s.id) + '">' +
+          '<img src="' + esc(s.photo_url) + '" alt="">' +
+          '<div class="n">' + esc(s.name) + '</div>' +
+        '</div>'
+      );
+    }).join('');
   }
 
   function renderManualForm(body, draft){
@@ -834,6 +885,10 @@
           '<label class="upload-btn">사진 추가하기<input type="file" id="fPhotoInput" accept="image/*" multiple style="display:none"></label>' +
           '<div class="hint" id="uploadHint"></div>' +
         '</div>' +
+        '<div class="field"><label>포장 비품 (완성 사진 + 필요한 포장재를 함께 보여줘요)</label>' +
+          '<div class="supply-pick-grid" id="supplyPickGrid">' + supplyPickHtml(draft) + '</div>' +
+          (state.supplies.length ? '' : '<div class="hint">등록된 비품 사진이 없어요. 관리자 화면 → 포장 비품에서 먼저 등록해주세요.</div>') +
+        '</div>' +
         '<div class="field"><label>유튜브 링크 (비공개 링크 가능)</label><input type="url" id="fYoutube" value="' + esc(draft.youtube_url||'') + '" placeholder="https://youtu.be/..."></div>' +
         '<div class="field"><label>단계별 설명</label>' +
           '<div id="stepsList">' + stepsHtml + '</div>' +
@@ -852,6 +907,16 @@
     document.getElementById('fYoutube').addEventListener('input', function(e){ draft.youtube_url = e.target.value; });
     document.getElementById('fRequired').addEventListener('change', function(e){ draft.is_required = e.target.checked; });
     document.getElementById('fTags').addEventListener('input', function(e){ draft.tags = e.target.value.split(',').map(function(t){ return t.trim(); }).filter(Boolean); });
+
+    body.querySelectorAll('[data-supply-pick]').forEach(function(el){
+      el.addEventListener('click', function(){
+        var id = el.getAttribute('data-supply-pick');
+        if (!draft.supply_ids) draft.supply_ids = [];
+        var i = draft.supply_ids.indexOf(id);
+        if (i === -1) draft.supply_ids.push(id); else draft.supply_ids.splice(i, 1);
+        el.classList.toggle('selected');
+      });
+    });
 
     body.querySelectorAll('[data-step-input]').forEach(function(el){
       el.addEventListener('input', function(){
@@ -930,6 +995,7 @@
         tags: draft.tags || [],
         youtube_url: (draft.youtube_url||'').trim(),
         is_required: !!draft.is_required,
+        supply_ids: draft.supply_ids || [],
         photos: draft.photos || [],
         steps: (draft.steps||[]).map(function(s){ return s.trim(); }).filter(Boolean),
         updated_at: new Date().toISOString()
@@ -1017,6 +1083,73 @@
           state.manuals.forEach(function(m){ if (m.category_id === id) m.category_id = null; });
           toast('삭제했어요.');
           render();
+        });
+      });
+    });
+  }
+
+  // --- 포장 비품 관리 (재사용 가능한 비품 사진 라이브러리) ---
+  function renderAdminSupplies(body){
+    var itemsHtml = state.supplies.map(function(s){
+      return (
+        '<div class="supply-lib-item">' +
+          '<img src="' + esc(s.photo_url) + '" alt="">' +
+          '<div class="n">' + esc(s.name) + '</div>' +
+          '<button class="icon-btn danger" data-supply-del="' + esc(s.id) + '" style="width:100%;">삭제</button>' +
+        '</div>'
+      );
+    }).join('') || '<div class="empty">등록된 비품 사진이 없어요.</div>';
+
+    body.innerHTML =
+      '<div class="section-head"><h3>포장 비품 (' + state.supplies.length + ')</h3></div>' +
+      '<div class="hint" style="margin-bottom:12px;">여기에 자주 쓰는 포장재·용기 사진을 등록해두면, 매뉴얼 편집 화면에서 골라서 붙일 수 있어요.</div>' +
+      '<div class="form-card">' +
+        '<div class="field"><label>비품 이름</label><input type="text" id="newSupplyName" placeholder="예: 크라프트 박스(대)"></div>' +
+        '<div class="field"><label>사진</label>' +
+          '<label class="upload-btn">사진 선택하기<input type="file" id="newSupplyPhoto" accept="image/*" style="display:none"></label>' +
+          '<div class="hint" id="supplyUploadHint"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="supply-lib-grid">' + itemsHtml + '</div>';
+
+    document.getElementById('newSupplyPhoto').addEventListener('change', function(e){
+      var file = (e.target.files || [])[0];
+      if (!file) return;
+      var nameInput = document.getElementById('newSupplyName');
+      var name = nameInput.value.trim();
+      if (!name){ toast('비품 이름을 먼저 입력해주세요.'); e.target.value = ''; return; }
+      var hint = document.getElementById('supplyUploadHint');
+      hint.textContent = '업로드 중…';
+      var path = 'supplies/' + uid() + '-' + file.name.replace(/[^a-zA-Z0-9_.-]/g, '_');
+      sb.storage.from(PHOTO_BUCKET).upload(path, file).then(function(res){
+        if (res.error) throw res.error;
+        var pub = sb.storage.from(PHOTO_BUCKET).getPublicUrl(path);
+        var sortOrder = state.supplies.length ? Math.max.apply(null, state.supplies.map(function(s){ return s.sort_order; })) + 1 : 0;
+        return sb.from('manual_supplies').insert({ name: name, photo_path: path, photo_url: pub.data.publicUrl, sort_order: sortOrder }).select();
+      }).then(function(res){
+        if (res.error) throw res.error;
+        state.supplies.push(res.data[0]);
+        toast('비품을 추가했어요.');
+        render();
+      }).catch(function(err){
+        toast('추가 실패: ' + (err.message || err));
+        hint.textContent = '';
+      });
+    });
+
+    body.querySelectorAll('[data-supply-del]').forEach(function(el){
+      el.addEventListener('click', function(){
+        var id = el.getAttribute('data-supply-del');
+        var used = state.manuals.some(function(m){ return (m.supply_ids||[]).indexOf(id) !== -1; });
+        if (used && !confirm('이 비품을 쓰는 매뉴얼이 있어요. 삭제하면 해당 매뉴얼에서도 빠집니다. 계속할까요?')) return;
+        var s = state.supplies.filter(function(x){ return x.id === id; })[0];
+        sb.from('manual_supplies').delete().eq('id', id).then(function(res){
+          if (res.error){ toast('삭제 실패: ' + res.error.message); return; }
+          state.supplies = state.supplies.filter(function(x){ return x.id !== id; });
+          state.manuals.forEach(function(m){ m.supply_ids = (m.supply_ids||[]).filter(function(x){ return x !== id; }); });
+          toast('삭제했어요.');
+          render();
+          if (s && s.photo_path) sb.storage.from(PHOTO_BUCKET).remove([s.photo_path]).catch(function(){});
         });
       });
     });
